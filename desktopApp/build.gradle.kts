@@ -117,6 +117,26 @@ val desktopMemoryJvmArgs =
         "-Dorg.bytedeco.javacpp.maxBytes=0",
     )
 
+// The CDS archive is only usable when the runtime module flags match the ones used at dump time.
+val desktopModuleJvmArgs =
+    listOf(
+        "--enable-native-access=ALL-UNNAMED",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
+        "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
+        "--add-opens=java.desktop/sun.swing=ALL-UNNAMED",
+        "--add-opens=jdk.security.auth/com.sun.security.auth.module=ALL-UNNAMED",
+    ) +
+        when (platform) {
+            "linux" -> listOf("--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED")
+            "mac" ->
+                listOf(
+                    "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
+                    "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
+                )
+            else -> emptyList()
+        }
+
 interface ArchiveOps {
     @get:Inject
     val archiveOperations: ArchiveOperations
@@ -619,7 +639,7 @@ compose.resources {
 
 // Compose strips command-line tools from its runtime; temporarily restore java to generate the base CDS archive.
 tasks.withType<AbstractJLinkTask>().configureEach {
-    val cdsOptions = desktopMemoryJvmArgs.toList()
+    val cdsOptions = (desktopModuleJvmArgs + desktopMemoryJvmArgs).toList()
     val runtimeDirectory = destinationDir
     val toolchainHome = javaHome
     val javaName = if (platform == "win") "java.exe" else "java"
@@ -715,7 +735,6 @@ compose.desktop {
                 .metadata.installationPath.asFile.absolutePath
         jvmArgs +=
             listOf(
-                "--enable-native-access=ALL-UNNAMED",
                 "--sun-misc-unsafe-memory-access=allow",
                 "-Dorg.slf4j.simpleLogger.log.org.freedesktop.dbus=warn",
                 "-XX:ErrorFile=${
@@ -773,27 +792,7 @@ compose.desktop {
                 "jdk.localedata",
             )
 
-            jvmArgs +=
-                listOf(
-                    "--add-opens=java.base/java.lang=ALL-UNNAMED",
-                    "--add-opens=java.desktop/sun.awt=ALL-UNNAMED",
-                    "--add-opens=java.desktop/java.awt=ALL-UNNAMED",
-                    "--add-opens=java.desktop/sun.swing=ALL-UNNAMED",
-                    "--add-opens=jdk.security.auth/com.sun.security.auth.module=ALL-UNNAMED",
-                ) + desktopMemoryJvmArgs
-            when (platform) {
-                "linux" -> {
-                    jvmArgs += "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
-                }
-
-                "mac" -> {
-                    jvmArgs +=
-                        listOf(
-                            "--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED",
-                            "--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-                        )
-                }
-            }
+            jvmArgs += desktopModuleJvmArgs + desktopMemoryJvmArgs
 
             windows {
                 iconFile.set(project.file("src/desktopMain/resources/logo.ico"))
